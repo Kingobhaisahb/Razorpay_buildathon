@@ -5,10 +5,6 @@ from datetime import datetime
 from .database import Base
 
 
-# =========================
-# MERCHANT
-# =========================
-
 class Merchant(Base):
     __tablename__ = "merchants"
 
@@ -18,7 +14,9 @@ class Merchant(Base):
         index=True
     )
 
-    name: Mapped[str] = mapped_column(String(100))
+    name: Mapped[str] = mapped_column(
+        String(100)
+    )
 
     email: Mapped[str] = mapped_column(
         String(150),
@@ -30,10 +28,6 @@ class Merchant(Base):
         default=datetime.utcnow
     )
 
-
-# =========================
-# PRODUCT
-# =========================
 
 class Product(Base):
     __tablename__ = "products"
@@ -48,15 +42,25 @@ class Product(Base):
         ForeignKey("merchants.id")
     )
 
-    name: Mapped[str] = mapped_column(String(150))
+    name: Mapped[str] = mapped_column(
+        String(150)
+    )
 
-    category: Mapped[str] = mapped_column(String(100))
+    category: Mapped[str] = mapped_column(
+        String(100)
+    )
 
-    price: Mapped[float] = mapped_column(Float)
+    price: Mapped[float] = mapped_column(
+        Float
+    )
 
-    cost: Mapped[float] = mapped_column(Float)
+    cost: Mapped[float] = mapped_column(
+        Float
+    )
 
-    inventory: Mapped[int] = mapped_column(Integer)
+    inventory: Mapped[int] = mapped_column(
+        Integer
+    )
 
     views: Mapped[int] = mapped_column(
         Integer,
@@ -68,10 +72,6 @@ class Product(Base):
         default=datetime.utcnow
     )
 
-
-# =========================
-# CUSTOMER
-# =========================
 
 class Customer(Base):
     __tablename__ = "customers"
@@ -86,7 +86,9 @@ class Customer(Base):
         ForeignKey("merchants.id")
     )
 
-    name: Mapped[str] = mapped_column(String(100))
+    name: Mapped[str] = mapped_column(
+        String(100)
+    )
 
     email: Mapped[str] = mapped_column(
         String(150)
@@ -101,10 +103,6 @@ class Customer(Base):
         default=datetime.utcnow
     )
 
-
-# =========================
-# ORDER
-# =========================
 
 class Order(Base):
     __tablename__ = "orders"
@@ -137,10 +135,6 @@ class Order(Base):
     )
 
 
-# =========================
-# ORDER ITEM
-# =========================
-
 class OrderItem(Base):
     __tablename__ = "order_items"
 
@@ -166,10 +160,6 @@ class OrderItem(Base):
         Float
     )
 
-
-# =========================
-# CHECKOUT SESSION
-# =========================
 
 class CheckoutSession(Base):
     __tablename__ = "checkout_sessions"
@@ -210,10 +200,6 @@ class CheckoutSession(Base):
     )
 
 
-# =========================
-# PAYMENT
-# =========================
-
 class Payment(Base):
     __tablename__ = "payments"
 
@@ -249,10 +235,6 @@ class Payment(Base):
         default=datetime.utcnow
     )
 
-
-# =========================
-# OFFER
-# =========================
 
 class Offer(Base):
     __tablename__ = "offers"
@@ -298,10 +280,6 @@ class Offer(Base):
     )
 
 
-# =========================
-# EXPERIMENT
-# =========================
-
 class Experiment(Base):
     __tablename__ = "experiments"
 
@@ -323,6 +301,38 @@ class Experiment(Base):
         String(500)
     )
 
+    # -----------------------------
+    # Sample sizes
+    # -----------------------------
+
+    control_visitors: Mapped[int] = mapped_column(
+        Integer,
+        default=0
+    )
+
+    variant_visitors: Mapped[int] = mapped_column(
+        Integer,
+        default=0
+    )
+
+    # -----------------------------
+    # Conversions
+    # -----------------------------
+
+    control_conversions: Mapped[int] = mapped_column(
+        Integer,
+        default=0
+    )
+
+    variant_conversions: Mapped[int] = mapped_column(
+        Integer,
+        default=0
+    )
+
+    # -----------------------------
+    # Conversion rates
+    # -----------------------------
+
     control_conversion: Mapped[float] = mapped_column(
         Float,
         default=0.0
@@ -332,6 +342,48 @@ class Experiment(Base):
         Float,
         default=0.0
     )
+
+    # -----------------------------
+    # Revenue
+    # -----------------------------
+
+    control_revenue: Mapped[float] = mapped_column(
+        Float,
+        default=0.0
+    )
+
+    variant_revenue: Mapped[float] = mapped_column(
+        Float,
+        default=0.0
+    )
+
+    # -----------------------------
+    # Experiment analysis
+    # -----------------------------
+
+    conversion_lift: Mapped[float] = mapped_column(
+        Float,
+        default=0.0
+    )
+
+    revenue_lift: Mapped[float] = mapped_column(
+        Float,
+        default=0.0
+    )
+
+    p_value: Mapped[float] = mapped_column(
+        Float,
+        default=1.0
+    )
+
+    statistically_significant: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False
+    )
+
+    # -----------------------------
+    # Status / decision
+    # -----------------------------
 
     status: Mapped[str] = mapped_column(
         String(50)
@@ -347,10 +399,6 @@ class Experiment(Base):
         default=datetime.utcnow
     )
 
-
-# =========================
-# AI ACTION
-# =========================
 
 class AIAction(Base):
     __tablename__ = "ai_actions"

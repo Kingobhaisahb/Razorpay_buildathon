@@ -1,4 +1,6 @@
 import os
+import math
+import random
 from typing import Dict, Any
 
 from dotenv import load_dotenv
@@ -54,6 +56,7 @@ def create_experiment_hypothesis(
     if opportunity_type == "product_offer":
 
         product_name = opportunity.get("product_name")
+
         discount = opportunity.get(
             "recommended_discount_percent",
             0
@@ -127,34 +130,137 @@ def create_experiment_hypothesis(
 
 
 # ============================================
+# NORMAL DISTRIBUTION CDF
+# ============================================
+
+def normal_cdf(value: float) -> float:
+    """
+    Standard normal cumulative distribution function.
+    """
+
+    return 0.5 * (
+        1 + math.erf(value / math.sqrt(2))
+    )
+
+
+# ============================================
+# TWO-PROPORTION Z-TEST
+# ============================================
+
+def calculate_p_value(
+    control_visitors: int,
+    control_conversions: int,
+    variant_visitors: int,
+    variant_conversions: int
+) -> float:
+
+    if control_visitors <= 0 or variant_visitors <= 0:
+        return 1.0
+
+    control_rate = (
+        control_conversions / control_visitors
+    )
+
+    variant_rate = (
+        variant_conversions / variant_visitors
+    )
+
+    pooled_rate = (
+        (control_conversions + variant_conversions)
+        / (control_visitors + variant_visitors)
+    )
+
+    standard_error = math.sqrt(
+        pooled_rate
+        * (1 - pooled_rate)
+        * (
+            (1 / control_visitors)
+            + (1 / variant_visitors)
+        )
+    )
+
+    if standard_error == 0:
+        return 1.0
+
+    z_score = (
+        variant_rate - control_rate
+    ) / standard_error
+
+    p_value = 2 * (
+        1 - normal_cdf(abs(z_score))
+    )
+
+    return max(0.0, min(1.0, p_value))
+
+
+# ============================================
 # SIMULATE EXPERIMENT RESULTS
 # ============================================
 
 def simulate_experiment_results(
     baseline_conversion: float,
-    expected_lift: float = 0.15
+    expected_lift: float = 0.15,
+    visitors_per_arm: int = 200000
 ) -> Dict[str, Any]:
-
-    import random
 
     random.seed()
 
-    control_conversion = baseline_conversion
+    # ----------------------------------------
+    # CONTROL
+    # ----------------------------------------
+
+    control_visitors = visitors_per_arm
+
+    control_rate = baseline_conversion / 100
+
+    control_conversions = round(
+        control_visitors * control_rate
+    )
+
+    # ----------------------------------------
+    # VARIANT
+    # ----------------------------------------
 
     variation = random.uniform(
         -0.02,
         0.02
     )
 
-    variant_conversion = (
-        baseline_conversion
+    variant_rate = (
+        control_rate
         * (1 + expected_lift + variation)
     )
 
-    variant_conversion = min(
-        variant_conversion,
-        100
+    variant_rate = min(
+        variant_rate,
+        0.99
     )
+
+    variant_visitors = visitors_per_arm
+
+    variant_conversions = round(
+        variant_visitors * variant_rate
+    )
+
+    # ----------------------------------------
+    # ACTUAL CONVERSION RATES
+    # ----------------------------------------
+
+    control_conversion = (
+        control_conversions
+        / control_visitors
+        * 100
+    )
+
+    variant_conversion = (
+        variant_conversions
+        / variant_visitors
+        * 100
+    )
+
+    # ----------------------------------------
+    # RELATIVE CONVERSION LIFT
+    # ----------------------------------------
 
     conversion_lift = (
         (
@@ -167,7 +273,30 @@ def simulate_experiment_results(
         else 0
     )
 
+    # ----------------------------------------
+    # STATISTICAL SIGNIFICANCE
+    # ----------------------------------------
+
+    p_value = calculate_p_value(
+        control_visitors,
+        control_conversions,
+        variant_visitors,
+        variant_conversions
+    )
+
+    statistically_significant = (
+        p_value < 0.05
+    )
+
     return {
+        "control_visitors": control_visitors,
+
+        "variant_visitors": variant_visitors,
+
+        "control_conversions": control_conversions,
+
+        "variant_conversions": variant_conversions,
+
         "control_conversion": round(
             control_conversion,
             2
@@ -181,6 +310,15 @@ def simulate_experiment_results(
         "conversion_lift": round(
             conversion_lift,
             2
+        ),
+
+        "p_value": round(
+            p_value,
+            4
+        ),
+
+        "statistically_significant": (
+            statistically_significant
         )
     }
 
@@ -190,10 +328,20 @@ def simulate_experiment_results(
 # ============================================
 
 def determine_experiment_result(
-    conversion_lift: float
+    conversion_lift: float,
+    p_value: float,
+    statistically_significant: bool
 ) -> Dict[str, Any]:
 
-    if conversion_lift >= 10:
+    # ----------------------------------------
+    # VARIANT WINS
+    # ----------------------------------------
+
+    if (
+        conversion_lift >= 10
+        and statistically_significant
+        and p_value < 0.05
+    ):
 
         return {
             "status": "completed",
@@ -201,7 +349,15 @@ def determine_experiment_result(
             "decision": "deploy_variant"
         }
 
-    if conversion_lift <= -10:
+    # ----------------------------------------
+    # CONTROL WINS
+    # ----------------------------------------
+
+    if (
+        conversion_lift <= -10
+        and statistically_significant
+        and p_value < 0.05
+    ):
 
         return {
             "status": "completed",
@@ -209,8 +365,12 @@ def determine_experiment_result(
             "decision": "keep_control"
         }
 
+    # ----------------------------------------
+    # NOT ENOUGH EVIDENCE
+    # ----------------------------------------
+
     return {
-        "status": "completed",
+        "status": "continue_testing",
         "winner": "neutral",
         "decision": "continue_testing"
     }
@@ -233,6 +393,7 @@ autonomous AI growth platform for online merchants.
 Analyze the experiment using ONLY the provided data.
 
 Your job is to explain:
+
 1. What the experiment tested.
 2. What happened.
 3. Why the result matters.
@@ -261,6 +422,18 @@ Variant:
 
 RESULTS:
 
+Control visitors:
+{results["control_visitors"]}
+
+Variant visitors:
+{results["variant_visitors"]}
+
+Control conversions:
+{results["control_conversions"]}
+
+Variant conversions:
+{results["variant_conversions"]}
+
 Control conversion:
 {results["control_conversion"]}%
 
@@ -269,6 +442,12 @@ Variant conversion:
 
 Conversion lift:
 {results["conversion_lift"]}%
+
+P-value:
+{results["p_value"]}
+
+Statistically significant:
+{results["statistically_significant"]}
 
 DETERMINISTIC DECISION:
 
@@ -281,16 +460,15 @@ Decision:
 Return a structured recommendation.
 
 The confidence value must represent confidence
-in the recommendation based on the evidence provided.
+in the recommendation based only on the provided evidence.
 
-If the result is positive and the deterministic
-engine selected the variant, recommend deployment
-but state that merchant approval is required.
+If the variant won and the result is statistically significant,
+recommend deployment but state that merchant approval is required.
 
 If the control won, recommend keeping the control.
 
-If the result is neutral, recommend continuing
-the experiment rather than deploying a winner.
+If the result is not statistically significant,
+recommend continuing the experiment rather than deploying a winner.
 """
 
     interaction = await gemini_client.aio.interactions.create(
@@ -323,11 +501,28 @@ async def save_experiment(
     async with AsyncSessionLocal() as session:
 
         experiment = Experiment(
+
             merchant_id=1,
 
             name=experiment_data["name"],
 
             hypothesis=experiment_data["hypothesis"],
+
+            control_visitors=(
+                experiment_data["control_visitors"]
+            ),
+
+            variant_visitors=(
+                experiment_data["variant_visitors"]
+            ),
+
+            control_conversions=(
+                experiment_data["control_conversions"]
+            ),
+
+            variant_conversions=(
+                experiment_data["variant_conversions"]
+            ),
 
             control_conversion=(
                 experiment_data["control_conversion"]
@@ -335,6 +530,41 @@ async def save_experiment(
 
             variant_conversion=(
                 experiment_data["variant_conversion"]
+            ),
+
+            control_revenue=(
+                experiment_data.get(
+                    "control_revenue",
+                    0.0
+                )
+            ),
+
+            variant_revenue=(
+                experiment_data.get(
+                    "variant_revenue",
+                    0.0
+                )
+            ),
+
+            conversion_lift=(
+                experiment_data["conversion_lift"]
+            ),
+
+            revenue_lift=(
+                experiment_data.get(
+                    "revenue_lift",
+                    0.0
+                )
+            ),
+
+            p_value=(
+                experiment_data["p_value"]
+            ),
+
+            statistically_significant=(
+                experiment_data[
+                    "statistically_significant"
+                ]
             ),
 
             status=experiment_data["status"],
@@ -408,7 +638,9 @@ async def run_ab_testing_agent(
         )
 
         baseline_conversion = (
-            metrics["payment_method_performance"]
+            metrics[
+                "payment_method_performance"
+            ]
             .get(
                 payment_method,
                 metrics["payments"]
@@ -429,7 +661,8 @@ async def run_ab_testing_agent(
 
     results = simulate_experiment_results(
         baseline_conversion=baseline_conversion,
-        expected_lift=0.15
+        expected_lift=0.15,
+        visitors_per_arm=200000
     )
 
     print("\nExperiment Results:")
@@ -440,7 +673,11 @@ async def run_ab_testing_agent(
     # ----------------------------------------
 
     decision = determine_experiment_result(
-        results["conversion_lift"]
+        conversion_lift=results["conversion_lift"],
+        p_value=results["p_value"],
+        statistically_significant=(
+            results["statistically_significant"]
+        )
     )
 
     print("\nDecision:")
@@ -475,6 +712,11 @@ async def run_ab_testing_agent(
     experiment_record = {
         **experiment,
         **results,
+
+        "control_revenue": 0.0,
+        "variant_revenue": 0.0,
+        "revenue_lift": 0.0,
+
         "status": decision["status"],
         "winner": decision["winner"]
     }
@@ -513,6 +755,7 @@ async def run_ab_testing_agent(
 async def main():
 
     opportunity = {
+
         "type": "product_offer",
 
         "product_id": 8,

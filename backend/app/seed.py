@@ -3,9 +3,8 @@ import random
 from datetime import datetime, timedelta
 
 from sqlalchemy import delete
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from .database import engine
+from .database import engine, AsyncSessionLocal, Base
 from .models import (
     Merchant,
     Product,
@@ -20,61 +19,44 @@ from .models import (
 )
 
 
-# ==========================================
-# CONFIGURATION
-# ==========================================
+# ============================================================
+# CONFIG
+# ============================================================
 
 random.seed(42)
 
-NUM_PRODUCTS = 100
-NUM_CUSTOMERS = 1000
-NUM_ORDERS = 5000
-NUM_CHECKOUTS = 10000
+MERCHANT_ID = 1
 
 
-# ==========================================
-# SAMPLE DATA
-# ==========================================
+# ============================================================
+# CREATE TABLES
+# ============================================================
 
-PRODUCT_CATEGORIES = [
-    "Electronics",
-    "Fashion",
-    "Home",
-    "Beauty",
-    "Sports",
-    "Accessories",
-]
-
-PRODUCT_NAMES = [
-    "Smart Watch",
-    "Wireless Earbuds",
-    "Running Shoes",
-    "Bluetooth Speaker",
-    "Laptop Backpack",
-    "Fitness Band",
-    "Phone Case",
-    "Travel Bag",
-    "Cotton Hoodie",
-    "Sports Jacket",
-    "Desk Lamp",
-    "Water Bottle",
-    "Yoga Mat",
-    "Mechanical Keyboard",
-    "Wireless Mouse",
-]
+async def create_tables():
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
 
 
-# ==========================================
-# MAIN SEED FUNCTION
-# ==========================================
+# ============================================================
+# SEED DATABASE
+# ============================================================
 
 async def seed_database():
 
-    async with AsyncSession(engine) as session:
+    # Create tables first.
+    # This allows the seed script to work even if
+    # shopcontrol.db was deleted.
 
-        print("Clearing existing data...")
+    await create_tables()
 
-        # Delete in dependency order
+    print("Clearing existing data...")
+
+    async with AsyncSessionLocal() as session:
+
+        # ====================================================
+        # CLEAR EXISTING DATA
+        # ====================================================
+
         await session.execute(delete(AIAction))
         await session.execute(delete(Experiment))
         await session.execute(delete(Offer))
@@ -88,417 +70,722 @@ async def seed_database():
 
         await session.commit()
 
-        print("Existing data cleared.")
-
-        # ==========================================
+        # ====================================================
         # MERCHANT
-        # ==========================================
+        # ====================================================
 
         merchant = Merchant(
-            name="NovaCart",
-            email="merchant@novacart.demo",
-            created_at=datetime.utcnow()
+            id=MERCHANT_ID,
+            name="Demo Merchant",
+            email="merchant@shopcontrol.ai",
         )
 
         session.add(merchant)
+
         await session.flush()
 
-        print("Created merchant.")
-
-        # ==========================================
+        # ====================================================
         # PRODUCTS
-        # ==========================================
+        # ====================================================
+
+        print("Creating products...")
+
+        categories = [
+            "Electronics",
+            "Fashion",
+            "Home",
+            "Beauty",
+            "Sports",
+            "Accessories",
+        ]
 
         products = []
 
-        for i in range(NUM_PRODUCTS):
+        for i in range(1, 101):
 
-            category = random.choice(PRODUCT_CATEGORIES)
+            category = random.choice(categories)
 
-            base_price = random.choice([
-                499,
-                799,
-                999,
-                1499,
-                1999,
-                2499,
-                2999,
-                3999,
-                4999,
-                6999,
-            ])
-
-            # Product cost is between 45% and 80% of selling price
-            cost = round(
-                base_price * random.uniform(0.45, 0.80),
-                2
+            price = round(
+                random.uniform(500, 10000),
+                2,
             )
 
-            inventory = random.randint(10, 500)
-            views = random.randint(500, 5000)
+            cost_percentage = random.uniform(
+                0.45,
+                0.75,
+            )
+
+            cost = round(
+                price * cost_percentage,
+                2,
+            )
+
+            inventory = random.randint(
+                5,
+                100,
+            )
+
+            views = random.randint(
+                500,
+                5000,
+            )
+
+            # High-traffic products.
+            # These give the Offer Agent useful
+            # opportunities to discover.
 
             if i in [7, 19, 34, 58, 81]:
-                views = random.randint(7000, 12000)
+
+                views = random.randint(
+                    7000,
+                    12000,
+                )
 
             product = Product(
-                merchant_id=merchant.id,
-                name=f"{random.choice(PRODUCT_NAMES)} {i + 1}",
+                merchant_id=MERCHANT_ID,
+                name=f"{category} Product {i}",
                 category=category,
-                price=base_price,
+                price=price,
                 cost=cost,
                 inventory=inventory,
                 views=views,
-                created_at=datetime.utcnow()
             )
 
             products.append(product)
 
-        session.add_all(products)
+            session.add(product)
+
+        # ----------------------------------------------------
+        # SPECIAL OFFER-AGENT OPPORTUNITY
+        # ----------------------------------------------------
+
+        wireless_earbuds = Product(
+            merchant_id=MERCHANT_ID,
+            name="Wireless Earbuds 8",
+            category="Electronics",
+            price=6999.00,
+            cost=3800.00,
+            inventory=32,
+            views=11392,
+        )
+
+        products.append(wireless_earbuds)
+
+        session.add(wireless_earbuds)
+
         await session.flush()
 
-        print(f"Created {len(products)} products.")
-
-        # ==========================================
+        # ====================================================
         # CUSTOMERS
-        # ==========================================
+        # ====================================================
+
+        print("Creating customers...")
 
         customers = []
 
-        devices = ["mobile", "desktop", "tablet"]
-
-        for i in range(NUM_CUSTOMERS):
+        for i in range(1, 1001):
 
             customer = Customer(
-                merchant_id=merchant.id,
-                name=f"Customer {i + 1}",
-                email=f"customer{i + 1}@example.com",
-                device_type=random.choices(
-                    devices,
-                    weights=[65, 30, 5]
-                )[0],
-                created_at=datetime.utcnow() - timedelta(
-                    days=random.randint(1, 365)
-                )
+                merchant_id=MERCHANT_ID,
+                name=f"Customer {i}",
+                email=f"customer{i}@example.com",
+                device_type=random.choice(
+                    [
+                        "mobile",
+                        "desktop",
+                        "tablet",
+                    ]
+                ),
             )
 
             customers.append(customer)
 
-        session.add_all(customers)
+            session.add(customer)
+
         await session.flush()
 
-        print(f"Created {len(customers)} customers.")
+        # ====================================================
+        # ORDERS
+        # ====================================================
 
-        # ==========================================
-        # ORDERS + ORDER ITEMS
-        # ==========================================
+        print("Creating orders...")
 
         orders = []
-        order_items = []
 
-        for i in range(NUM_ORDERS):
+        for i in range(1, 5001):
 
-            customer = random.choice(customers)
-            product = random.choice(products)
+            customer = random.choice(
+                customers
+            )
 
-            quantity = random.choices(
-                [1, 2, 3],
-                weights=[75, 20, 5]
-            )[0]
-
-            amount = round(
-                product.price * quantity,
-                2
+            order_date = (
+                datetime.utcnow()
+                - timedelta(
+                    days=random.randint(
+                        0,
+                        90,
+                    )
+                )
             )
 
             order = Order(
-                merchant_id=merchant.id,
+                merchant_id=MERCHANT_ID,
                 customer_id=customer.id,
-                total_amount=amount,
+                total_amount=0,
                 status="completed",
-                created_at=datetime.utcnow() - timedelta(
-                    days=random.randint(1, 180)
+                created_at=order_date,
+            )
+
+            session.add(order)
+
+            await session.flush()
+
+            # ------------------------------------------------
+            # ORDER ITEMS
+            # ------------------------------------------------
+
+            number_of_items = random.randint(
+                1,
+                4,
+            )
+
+            selected_products = random.sample(
+                products,
+                number_of_items,
+            )
+
+            order_total = 0
+
+            for product in selected_products:
+
+                quantity = random.randint(
+                    1,
+                    2,
                 )
+
+                item_price = product.price
+
+                item_total = (
+                    item_price * quantity
+                )
+
+                order_item = OrderItem(
+                    order_id=order.id,
+                    product_id=product.id,
+                    quantity=quantity,
+                    price=item_price,
+                )
+
+                session.add(order_item)
+
+                order_total += item_total
+
+            order.total_amount = round(
+                order_total,
+                2,
             )
 
             orders.append(order)
 
-            order_item = OrderItem(
-                order_id=0,
-                product_id=product.id,
-                quantity=quantity,
-                price=product.price
-            )
-
-            order_items.append((order, order_item))
-
-        session.add_all(orders)
         await session.flush()
 
-        for order, item in order_items:
-            item.order_id = order.id
+        # ====================================================
+        # CHECKOUT SESSIONS
+        # ====================================================
 
-        session.add_all(
-            [item for _, item in order_items]
-        )
+        print("Creating checkout sessions...")
 
-        print(f"Created {len(orders)} orders.")
-
-        # ==========================================
-        # CHECKOUT SESSIONS + PAYMENTS
-        # ==========================================
-
-        checkouts = []
-        payments = []
+        devices = [
+            "desktop",
+            "mobile",
+            "tablet",
+        ]
 
         payment_methods = [
-            "upi",
             "card",
+            "upi",
             "netbanking",
             "wallet",
         ]
 
-        for i in range(NUM_CHECKOUTS):
+        checkout_sessions = []
 
-            customer = random.choice(customers)
+        for i in range(10000):
 
-            device = customer.device_type
+            # ------------------------------------------------
+            # DEVICE
+            # ------------------------------------------------
 
-            payment_method = random.choices(
-                payment_methods,
-                weights=[55, 30, 10, 5]
+            device = random.choices(
+                devices,
+                weights=[
+                    28,
+                    67,
+                    5,
+                ],
             )[0]
 
-            cart_value = round(
-                random.uniform(500, 7000),
-                2
+            # ------------------------------------------------
+            # PAYMENT METHOD
+            # ------------------------------------------------
+
+            payment_method = random.choice(
+                payment_methods
             )
 
-            # --------------------------------------
-            # Introduce realistic checkout behavior
-            # --------------------------------------
+            # ------------------------------------------------
+            # CHECKOUT STATUS
+            # ------------------------------------------------
 
-            # Mobile + UPI intentionally performs worse
-            if device == "mobile" and payment_method == "upi":
+            # Intentionally create weaker performance
+            # for Mobile + UPI.
+            #
+            # This gives the Checkout Agent a genuine
+            # data-driven opportunity to discover.
+
+            if (
+                device == "mobile"
+                and payment_method == "upi"
+            ):
 
                 status = random.choices(
-                    ["completed", "abandoned", "failed"],
-                    weights=[55, 25, 20]
+                    [
+                        "completed",
+                        "abandoned",
+                        "failed",
+                    ],
+                    weights=[
+                        55,
+                        25,
+                        20,
+                    ],
                 )[0]
 
             else:
 
                 status = random.choices(
-                    ["completed", "abandoned", "failed"],
-                    weights=[75, 15, 10]
+                    [
+                        "completed",
+                        "abandoned",
+                        "failed",
+                    ],
+                    weights=[
+                        75,
+                        15,
+                        10,
+                    ],
                 )[0]
 
+            # ------------------------------------------------
+            # CUSTOMER
+            # ------------------------------------------------
+
+            customer = random.choice(
+                customers
+            )
+
+            # ------------------------------------------------
+            # CART VALUE
+            # ------------------------------------------------
+
+            cart_value = round(
+                random.uniform(
+                    500,
+                    15000,
+                ),
+                2,
+            )
+
+            # ------------------------------------------------
+            # DATE
+            # ------------------------------------------------
+
+            session_date = (
+                datetime.utcnow()
+                - timedelta(
+                    days=random.randint(
+                        0,
+                        90,
+                    )
+                )
+            )
+
+            # ------------------------------------------------
+            # CREATE CHECKOUT
+            # ------------------------------------------------
+
             checkout = CheckoutSession(
-                merchant_id=merchant.id,
+                merchant_id=MERCHANT_ID,
                 customer_id=customer.id,
                 device_type=device,
                 payment_method=payment_method,
                 cart_value=cart_value,
                 status=status,
-                created_at=datetime.utcnow() - timedelta(
-                    days=random.randint(1, 90)
-                )
+                created_at=session_date,
             )
 
-            checkouts.append(checkout)
+            checkout_sessions.append(
+                checkout
+            )
 
-        session.add_all(checkouts)
+            session.add(checkout)
+
         await session.flush()
 
-        print(f"Created {len(checkouts)} checkout sessions.")
-
-        # ==========================================
+        # ====================================================
         # PAYMENTS
-        # ==========================================
+        # ====================================================
 
-        for checkout in checkouts:
+        print("Creating payments...")
 
-            # Abandoned checkout may never reach payment
+        payments = []
+
+        for checkout in checkout_sessions:
+
+            # ------------------------------------------------
+            # ABANDONED CHECKOUTS
+            # ------------------------------------------------
+
             if checkout.status == "abandoned":
-                continue
+
+                # Most abandoned sessions never attempt
+                # payment.
+
+                if random.random() > 0.15:
+                    continue
+
+            # ------------------------------------------------
+            # PAYMENT STATUS
+            # ------------------------------------------------
 
             if checkout.status == "completed":
 
                 payment_status = "success"
+
                 failure_reason = None
 
             else:
 
                 payment_status = "failed"
 
-                failure_reason = random.choice([
+                failure_reasons = [
+                    "payment_timeout",
                     "bank_declined",
-                    "insufficient_funds",
-                    "timeout",
-                    "technical_error",
-                ])
+                    "gateway_error",
+                    "user_cancelled",
+                ]
+
+                failure_reason = random.choice(
+                    failure_reasons
+                )
+
+            # ------------------------------------------------
+            # PAYMENT AMOUNT
+            # ------------------------------------------------
+
+            amount = checkout.cart_value
+
+            # ------------------------------------------------
+            # PAYMENT
+            # ------------------------------------------------
 
             payment = Payment(
                 checkout_session_id=checkout.id,
-                amount=checkout.cart_value,
+                amount=amount,
                 payment_method=checkout.payment_method,
                 status=payment_status,
                 failure_reason=failure_reason,
-                created_at=checkout.created_at
+                created_at=checkout.created_at,
             )
 
             payments.append(payment)
 
-        session.add_all(payments)
+            session.add(payment)
 
-        print(f"Created {len(payments)} payments.")
+        await session.flush()
 
-        # ==========================================
+        # ====================================================
         # OFFERS
-        # ==========================================
+        # ====================================================
+
+        print("Creating offers...")
 
         offers = [
-
             Offer(
-                merchant_id=merchant.id,
-                name="Summer Sale",
-                discount_percent=10,
-                max_discount_percent=15,
-                min_margin_percent=25,
-                budget=50000,
-                active=True
+                merchant_id=MERCHANT_ID,
+                name="Summer Electronics Sale",
+                discount_percent=10.0,
+                max_discount_percent=15.0,
+                min_margin_percent=25.0,
+                budget=50000.0,
+                active=True,
             ),
 
             Offer(
-                merchant_id=merchant.id,
+                merchant_id=MERCHANT_ID,
                 name="New Customer Offer",
-                discount_percent=5,
-                max_discount_percent=10,
-                min_margin_percent=30,
-                budget=25000,
-                active=True
+                discount_percent=5.0,
+                max_discount_percent=10.0,
+                min_margin_percent=25.0,
+                budget=30000.0,
+                active=True,
             ),
 
             Offer(
-                merchant_id=merchant.id,
-                name="Weekend Flash Sale",
-                discount_percent=15,
-                max_discount_percent=15,
-                min_margin_percent=20,
-                budget=15000,
-                active=False
+                merchant_id=MERCHANT_ID,
+                name="Weekend Special",
+                discount_percent=15.0,
+                max_discount_percent=15.0,
+                min_margin_percent=25.0,
+                budget=25000.0,
+                active=False,
             ),
         ]
 
         session.add_all(offers)
 
-        print("Created offers.")
+        await session.flush()
 
-        # ==========================================
+        # ====================================================
         # EXPERIMENTS
-        # ==========================================
+        # ====================================================
+
+        print("Creating experiments...")
 
         experiments = [
 
-            Experiment(
-                merchant_id=merchant.id,
-                name="Mobile Checkout Test",
-                hypothesis="Simplifying mobile checkout will increase conversion.",
-                control_conversion=64.2,
-                variant_conversion=77.8,
-                status="completed",
-                winner="variant"
-            ),
+            # ------------------------------------------------
+            # EXPERIMENT 1
+            # ------------------------------------------------
 
             Experiment(
-                merchant_id=merchant.id,
-                name="Free Shipping Banner",
-                hypothesis="Showing free shipping earlier will reduce checkout abandonment.",
-                control_conversion=68.4,
-                variant_conversion=69.1,
+                merchant_id=MERCHANT_ID,
+                name="Homepage CTA Test",
+                hypothesis=(
+                    "A stronger CTA will increase "
+                    "checkout starts."
+                ),
+
+                control_visitors=2500,
+                variant_visitors=2500,
+
+                control_conversions=53,
+                variant_conversions=61,
+
+                control_conversion=2.10,
+                variant_conversion=2.42,
+
+                control_revenue=171000.0,
+                variant_revenue=197000.0,
+
+                conversion_lift=15.24,
+                revenue_lift=15.20,
+
+                p_value=0.41,
+                statistically_significant=False,
+
                 status="completed",
-                winner="variant"
+                winner="neutral",
             ),
 
+            # ------------------------------------------------
+            # EXPERIMENT 2
+            # ------------------------------------------------
+
             Experiment(
-                merchant_id=merchant.id,
-                name="Product Recommendation Test",
-                hypothesis="Showing related products will increase average order value.",
-                control_conversion=72.5,
-                variant_conversion=71.8,
+                merchant_id=MERCHANT_ID,
+                name="Product Page Offer Test",
+                hypothesis=(
+                    "Showing a targeted offer will "
+                    "increase product conversion."
+                ),
+
+                control_visitors=3000,
+                variant_visitors=3000,
+
+                control_conversions=54,
+                variant_conversions=65,
+
+                control_conversion=1.80,
+                variant_conversion=2.15,
+
+                control_revenue=175000.0,
+                variant_revenue=211000.0,
+
+                conversion_lift=19.44,
+                revenue_lift=20.57,
+
+                p_value=0.04,
+                statistically_significant=True,
+
                 status="completed",
-                winner="control"
+                winner="variant",
+            ),
+
+            # ------------------------------------------------
+            # EXPERIMENT 3
+            # ------------------------------------------------
+
+            Experiment(
+                merchant_id=MERCHANT_ID,
+                name="Checkout Button Test",
+                hypothesis=(
+                    "Simplifying the checkout button "
+                    "will improve conversion."
+                ),
+
+                control_visitors=2000,
+                variant_visitors=2000,
+
+                control_conversions=62,
+                variant_conversions=58,
+
+                control_conversion=3.10,
+                variant_conversion=2.90,
+
+                control_revenue=201000.0,
+                variant_revenue=188000.0,
+
+                conversion_lift=-6.45,
+                revenue_lift=-6.47,
+
+                p_value=0.61,
+                statistically_significant=False,
+
+                status="completed",
+                winner="neutral",
             ),
         ]
 
-        session.add_all(experiments)
+        session.add_all(
+            experiments
+        )
 
-        print("Created experiments.")
+        await session.flush()
 
-        # ==========================================
-        # AI ACTION HISTORY
-        # ==========================================
+        # ====================================================
+        # AI ACTIONS
+        # ====================================================
+
+        print("Creating AI actions...")
 
         ai_actions = [
 
+            # ------------------------------------------------
+            # CHECKOUT AGENT
+            # ------------------------------------------------
+
             AIAction(
-                merchant_id=merchant.id,
+                merchant_id=MERCHANT_ID,
                 agent_name="Checkout Agent",
-                action_type="detect_issue",
-                description="Detected elevated mobile checkout abandonment.",
-                status="completed",
+                action_type="optimization",
+                description=(
+                    "Detected lower UPI payment success "
+                    "rates and recommended checkout "
+                    "optimization."
+                ),
+                status="recommended",
                 expected_impact=8.5,
-                actual_impact=6.2
+                actual_impact=0.0,
             ),
 
-            AIAction(
-                merchant_id=merchant.id,
-                agent_name="A/B Testing Agent",
-                action_type="create_experiment",
-                description="Created mobile checkout optimization experiment.",
-                status="completed",
-                expected_impact=12.0,
-                actual_impact=13.6
-            ),
+            # ------------------------------------------------
+            # OFFER AGENT
+            # ------------------------------------------------
 
             AIAction(
-                merchant_id=merchant.id,
+                merchant_id=MERCHANT_ID,
                 agent_name="Offer Agent",
-                action_type="create_offer",
-                description="Proposed targeted discount for high-intent customers.",
-                status="pending",
-                expected_impact=7.5,
-                actual_impact=0.0
+                action_type="offer_creation",
+                description=(
+                    "Recommended a targeted 10% discount "
+                    "for Wireless Earbuds 8."
+                ),
+                status="awaiting_approval",
+                expected_impact=14.0,
+                actual_impact=0.0,
+            ),
+
+            # ------------------------------------------------
+            # A/B TESTING AGENT
+            # ------------------------------------------------
+
+            AIAction(
+                merchant_id=MERCHANT_ID,
+                agent_name="A/B Testing Agent",
+                action_type="experiment",
+                description=(
+                    "Completed a controlled experiment "
+                    "comparing the existing experience "
+                    "against an optimized variant."
+                ),
+                status="completed",
+                expected_impact=10.0,
+                actual_impact=14.35,
             ),
         ]
 
-        session.add_all(ai_actions)
+        session.add_all(
+            ai_actions
+        )
 
-        print("Created AI action history.")
-
-        # ==========================================
-        # COMMIT EVERYTHING
-        # ==========================================
+        # ====================================================
+        # COMMIT
+        # ====================================================
 
         await session.commit()
 
+        # ====================================================
+        # FINAL OUTPUT
+        # ====================================================
+
         print()
-        print("======================================")
-        print("ShopControl database seeded successfully!")
-        print("======================================")
-        print(f"Merchant:          1")
-        print(f"Products:          {NUM_PRODUCTS}")
-        print(f"Customers:         {NUM_CUSTOMERS}")
-        print(f"Orders:            {NUM_ORDERS}")
-        print(f"Checkout Sessions: {NUM_CHECKOUTS}")
-        print(f"Payments:          {len(payments)}")
-        print(f"Offers:            {len(offers)}")
-        print(f"Experiments:       {len(experiments)}")
-        print(f"AI Actions:        {len(ai_actions)}")
+        print("=" * 60)
+        print("        SHOPCONTROL DATABASE SEEDED")
+        print("=" * 60)
+
+        print(
+            f"Merchant:          {MERCHANT_ID}"
+        )
+
+        print(
+            f"Products:          {len(products)}"
+        )
+
+        print(
+            f"Customers:         {len(customers)}"
+        )
+
+        print(
+            f"Orders:            {len(orders)}"
+        )
+
+        print(
+            f"Checkout Sessions: {len(checkout_sessions)}"
+        )
+
+        print(
+            f"Payments:          {len(payments)}"
+        )
+
+        print(
+            f"Offers:            {len(offers)}"
+        )
+
+        print(
+            f"Experiments:       {len(experiments)}"
+        )
+
+        print(
+            f"AI Actions:        {len(ai_actions)}"
+        )
+
+        print("=" * 60)
 
 
-# ==========================================
-# RUN SCRIPT
-# ==========================================
+# ============================================================
+# ENTRY POINT
+# ============================================================
 
 if __name__ == "__main__":
     asyncio.run(seed_database())
